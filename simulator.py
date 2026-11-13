@@ -5,11 +5,19 @@ Drive the provided harness (qnetsim.py) to implement the three graded
 entry points. Signatures are normative; the autograder imports them.
 
 Only numpy + standard library + qnetsim may be used.
+
+AI Usage:
+AI was used verify that we understood the qnetsim functionality properly and the variant_params.json file.
+AI was also used to help us understand how to implement the p95_latency_ms metric.
+Specifically how to calculate the latency of each delivered pair and how to calculate the p95 latency from that list of latencies.
+AI was not used to write any of the code in this file. All code was written by the team.
 """
+
+import math
 
 import numpy as np
 
-from qnetsim import Link
+from qnetsim import DeliveredPair, Link, Simulator, summarise
 
 # ---------------------------------------------------------------- helpers
 
@@ -91,8 +99,35 @@ def run_one_hop(params, sim_time_ms, seed) -> dict:
     DeliveredPair-equivalent record (or count pairs via state.stats and
     track fidelities in a list).
     """
+    links = make_links(params, which="one_hop")
+    sim = Simulator(
+        links,
+        t2=math.inf,
+        q_swap=1.0,
+        f_swap=1.0,
+        seed=seed,
+        purification_allowed=False,
+    )
+    sim.run(sim_time_ms, policy=None)
+    delivered = []
+    for pair in sim.state.pairs.get(0, []):
+        delivered.append(
+            DeliveredPair(
+                request_id=-1,
+                delivered_at=pair.born,
+                fidelity=pair.f0,
+                consumed=1,
+            )
+        )
 
-    raise NotImplementedError("TODO: implement run_one_hop")
+    summary = summarise(delivered, sim_time_ms)
+    return {"rate": summary["rate"], "mean_fidelity": summary["mean_fidelity"]}
+
+
+class ASAPSwapPolicy:
+    def on_pair_ready(self, link, pair, state, sim):
+        if state.pairs.get(0) and state.pairs.get(1):
+            sim.swap(0, 1)
 
 
 def run_two_hop(params, sim_time_ms, seed) -> dict:
@@ -104,7 +139,20 @@ def run_two_hop(params, sim_time_ms, seed) -> dict:
     q_swap=1.0, f_swap=params['physics']['f_swap']; use a policy that swaps
     as soon as both links hold a pair; summarise with qnetsim.summarise.
     """
-    raise NotImplementedError("TODO: implement run_two_hop")
+
+    links = make_links(params, which="two_hop")
+    sim = Simulator(
+        links,
+        t2=math.inf,
+        q_swap=1.0,
+        f_swap=params["physics"]["f_swap"],
+        seed=seed,
+        purification_allowed=False,
+    )
+
+    delivered = sim.run(sim_time_ms, policy=ASAPSwapPolicy())
+    summary = summarise(delivered, sim_time_ms)
+    return {"rate": summary["rate"], "mean_fidelity": summary["mean_fidelity"]}
 
 
 def run_variant_scenario(params, sim_time_ms, seed, policy) -> dict:
@@ -123,4 +171,35 @@ def run_variant_scenario(params, sim_time_ms, seed, policy) -> dict:
       * return the four metrics. pairs_consumed_per_delivery =
         stats['generated'] / max(1, delivered).
     """
-    raise NotImplementedError("TODO: implement run_variant_scenario")
+    links = make_links(params)
+    sim = Simulator(
+        links,
+        t2=params["physics"]["t2_ms"],
+        q_swap=params["physics"]["q_swap"],
+        f_swap=params["physics"]["f_swap"],
+        seed=seed,
+        purification_allowed=params["physics"]["purification_allowed"],
+    )
+
+    delivered = sim.run(sim_time_ms, policy=policy)
+
+    deliver_times = [d.delivered_at for d in delivered]
+    req_times = request_times(params, sim_time_ms, seed)
+
+    latency = []
+    for i in range(min(len(deliver_times), len(req_times))):
+        latency.append(max(0, deliver_times[i] - max(0, req_times[i])))
+
+    lats = sorted(latency)
+    p95 = (
+        lats[min(len(lats) - 1, int(math.ceil(0.95 * len(lats))) - 1)] if lats else 0.0
+    )
+
+    summary = summarise(delivered, sim_time_ms)
+    return {
+        "rate": summary["rate"],
+        "mean_fidelity": summary["mean_fidelity"],
+        "p95_latency_ms": p95,
+        "pairs_consumed_per_delivery": sim.state.stats["generated"]
+        / max(1, summary["delivered"]),
+    }
