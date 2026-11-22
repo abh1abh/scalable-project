@@ -54,44 +54,17 @@ class FreshAndDiscardSwapPolicy:
                 continue
             while inv and state.current_fidelity(inv[0]) < self.min_fidelity:
                 sim.discard(link_id, 0)
+            if len(inv) > 1:
+                f0 = state.current_fidelity(inv[0])
+                f1 = state.current_fidelity(inv[1])
+                f_out, _ = bbpssw(min(f0, f1))
+
+                if f_out > max(f0, f1):
+                    sim.purify(link_id)
 
         for left, right in self.chains:
             if state.pairs.get(left) and state.pairs.get(right):
                 sim.swap(left, right, left_index=-1, right_index=-1)
-
-
-class PurifyPolicy:
-    def __init__(self, params):
-        self.params = params
-        self.chains = params["policy"]["swap_chains"]
-        self.min_fidelity = params["slo"]["min_fidelity"] / (
-            params["physics"]["f_swap"] * params["physics"]["f_link"]
-        )
-        rates = [
-            link["attempt_rate"] * link["p_success"]
-            for link in params["topology"]["links"]
-        ]
-        self.slow_links_index = rates.index(min(rates))
-
-    def on_pair_ready(self, link, pair, state, sim):
-        for link_id, inv in state.pairs.items():
-            if link_id == self.slow_links_index or len(inv) < 2:
-                continue
-
-            f0 = state.current_fidelity(inv[0])
-            f1 = state.current_fidelity(inv[1])
-            f_out, _ = bbpssw(min(f0, f1))
-
-            if f_out > max(f0, f1):
-                f_out, _ = bbpssw(min(f0, f1))
-                sim.purify(link_id)
-
-        for left, right in self.chains:
-            l, r = state.pairs.get(left), state.pairs.get(right)
-            if l and r:
-                li = max(range(len(l)), key=lambda i: state.current_fidelity(l[i]))
-                ri = max(range(len(r)), key=lambda i: state.current_fidelity(r[i]))
-                sim.swap(left, right, left_index=li, right_index=ri)
 
 
 def make_policy(params):
