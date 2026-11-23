@@ -35,7 +35,7 @@ class BaselinePolicy:
                 sim.swap(left, right)
 
 
-class FreshAndDiscardSwapPolicy:
+class ImplementedPolicy:
     def __init__(self, params):
         self.params = params
         self.chains = params["policy"]["swap_chains"]
@@ -70,4 +70,4 @@ class FreshAndDiscardSwapPolicy:
 def make_policy(params):
     """Return your policy object. Replace BaselinePolicy with your own class
     (same constructor signature and on_pair_ready hook)."""
-    return FreshAndDiscardSwapPolicy(params)
+    return ImplementedPolicy(params)
