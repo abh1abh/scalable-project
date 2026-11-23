@@ -39,6 +39,7 @@ class ImplementedPolicy:
     def __init__(self, params):
         self.params = params
         self.chains = params["policy"]["swap_chains"]
+        self.purification_allowed = params["physics"]["purification_allowed"]
         self.min_fidelity = params["slo"]["min_fidelity"] / (
             params["physics"]["f_swap"] * params["physics"]["f_link"]
         )
@@ -54,7 +55,7 @@ class ImplementedPolicy:
                 continue
             while inv and state.current_fidelity(inv[0]) < self.min_fidelity:
                 sim.discard(link_id, 0)
-            if len(inv) > 1:
+            if self.purification_allowed and len(inv) > 1:
                 f0 = state.current_fidelity(inv[0])
                 f1 = state.current_fidelity(inv[1])
                 f_out, _ = bbpssw(min(f0, f1))
